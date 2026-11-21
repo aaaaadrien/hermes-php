@@ -1,0 +1,21 @@
+# Données d'exécution (base SQLite, uploads, config de travail avec secrets)
+data/*
+!data/.gitkeep
+
+# Base de données
+*.db
+*.sqlite
+
+# Logs
+*.log
+
+# Divers
+*.old
+.DS_Store
+
+# Dépendances Composer
+vendor/
+
+# Divers
+TODO.md
+BASH.md
