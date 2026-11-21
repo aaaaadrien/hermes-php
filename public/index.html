@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hermes</title>
+  <link rel="stylesheet" href="/assets/hermes.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📜</text></svg>" />
+</head>
+<body>
+  <!-- ================= Écran de connexion ================= -->
+  <div id="login-screen" class="login-screen hidden">
+    <div class="login-card">
+      <div class="login-logo">📜</div>
+      <h1 id="login-title">Hermes</h1>
+      <p id="login-subtitle" class="login-subtitle"></p>
+
+      <div id="login-error" class="login-error hidden"></div>
+
+      <div id="login-tabs" class="login-tabs">
+        <button class="login-tab active" data-tab="login">Connexion</button>
+        <button class="login-tab hidden" data-tab="register">Créer un compte</button>
+      </div>
+
+      <form id="form-login" class="login-form">
+        <label>Identifiant
+          <input type="text" id="login-username" autocomplete="username" required />
+        </label>
+        <label>Mot de passe
+          <input type="password" id="login-password" autocomplete="current-password" required />
+        </label>
+        <button type="submit" class="btn btn-primary" id="btn-login">Se connecter</button>
+        <button type="button" class="btn btn-oidc hidden" id="btn-login-oidc">Se connecter avec OIDC</button>
+      </form>
+
+      <form id="form-register" class="login-form hidden">
+        <label>Nom d'utilisateur
+          <input type="text" id="reg-username" autocomplete="username" required />
+        </label>
+        <label>Mot de passe (6 caractères min.)
+          <input type="password" id="reg-password" autocomplete="new-password" minlength="6" required />
+        </label>
+        <button type="submit" class="btn btn-primary" id="btn-register">Créer le compte</button>
+      </form>
+
+      <div id="login-divider" class="login-divider hidden"><span>ou</span></div>
+    </div>
+  </div>
+
+  <!-- ================= Application principale ================= -->
+  <div id="app" class="app hidden">
+    <!-- Barre latérale -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-top">
+        <div class="sidebar-buttons">
+          <button class="btn btn-primary btn-new" id="btn-new-conv" title="Nouvelle conversation sauvegardée">✏️ Nouveau</button>
+          <button class="btn btn-secondary btn-ephemeral" id="btn-ephemeral" title="Conversation éphémère (non sauvegardée)">🫥</button>
+        </div>
+      </div>
+
+      <div id="amphore-zone" class="sidebar-block hidden">
+        <div class="amphore-header">
+          <label class="section-label" title="Les amphores sont des contextes personnalisés (prompt système) qui changent le comportement de l'IA. 🌐 = globale (partagée) · 👤 = perso (uniquement visible par vous).">🏺 Amphores</label>
+          <div class="amphore-actions">
+            <button class="btn btn-tiny btn-amphore-edit" id="btn-amphore-edit" title="Éditer l'amphore">📝</button>
+            <button class="btn btn-tiny btn-amphore-delete" id="btn-amphore-delete" title="Supprimer l'amphore sélectionnée">🗑</button>
+            <button class="btn btn-tiny" id="btn-amphore-create" title="Créer une amphore">＋</button>
+          </div>
+        </div>
+        <select id="select-amphore" class="field"></select>
+      </div>
+
+      <nav class="conv-list" id="conv-list" aria-label="Conversations"></nav>
+
+      <div class="sidebar-bottom">
+        <div class="user-block">
+          <div class="user-info" id="user-info-menu">
+            <span class="user-avatar" id="user-avatar">?</span>
+            <span class="user-name" id="user-name">…</span>
+            <div id="user-menu" class="dropdown-menu hidden"></div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+    <!-- Zone principale -->
+    <main class="main-area">
+      <header class="header">
+        <button class="btn btn-icon" id="btn-mobile-menu" title="Menu">☰</button>
+        <span class="header-logo" id="header-logo"></span>
+        <h1 id="header-title"></h1>
+      </header>
+
+      <div class="chat-area" id="chat-area">
+        <div id="ephemeral-banner" class="ephemeral-banner hidden">
+          🫥 Mode éphémère — cette conversation n'est pas sauvegardée
+        </div>
+        <div class="chat-messages" id="chat-messages">
+          <div class="conv-empty" id="conv-empty">
+            <div class="conv-empty-icon">📜</div>
+            <p>Posez votre question pour commencer.</p>
+          </div>
+        </div>
+      </div>
+
+      <footer class="composer">
+        <div class="file-preview hidden" id="file-preview">
+          <span class="file-icon" id="file-icon">📄</span>
+          <span class="file-name" id="file-name"></span>
+          <button class="btn btn-tiny" id="btn-file-remove" title="Retirer le fichier">✕</button>
+        </div>
+        <div class="composer-row">
+          <label class="btn btn-icon" id="btn-clip" title="Joindre un fichier">📎
+            <input type="file" id="file-input" hidden />
+          </label>
+          <textarea id="composer-input" class="composer-input" rows="1"
+            placeholder="Posez votre question..."></textarea>
+          <div class="composer-buttons">
+            <button id="btn-reasoning" class="btn btn-icon hidden" title="Niveau de raisonnement">🧠 <span id="reasoning-label"></span></button>
+            <div id="reasoning-menu" class="dropdown-menu hidden"></div>
+            <button id="btn-dictation" class="btn btn-icon hidden" title="Dictée vocale">
+              <span id="dictation-icon">🎤</span><span id="dictation-timer" class="hidden"></span>
+            </button>
+            <button class="btn btn-primary" id="btn-send" title="Envoyer">➤</button>
+          </div>
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <!-- ================= Modales ================= -->
+  <div id="modal-profil" class="modal hidden" data-modal="profil">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2>Profil</h2>
+        <button class="modal-close" data-close="profil">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-info" id="profile-info"></p>
+        <label>Thème
+          <div class="theme-options">
+            <label class="theme-option" id="opt-light">
+              <input type="radio" name="theme" value="light" />
+              ☀️ Clair
+            </label>
+            <label class="theme-option" id="opt-dark">
+              <input type="radio" name="theme" value="dark" />
+              🌙 Sombre
+            </label>
+          </div>
+        </label>
+        <form id="form-password" class="form-column">
+          <label>Mot de passe actuel
+            <input type="password" id="password-current" autocomplete="current-password" />
+          </label>
+          <label>Nouveau mot de passe
+            <input type="password" id="password-new" autocomplete="new-password" minlength="6" />
+          </label>
+          <div id="profile-error" class="login-error hidden"></div>
+          <button type="submit" class="btn btn-primary">Changer le mot de passe</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-amphore" class="modal hidden" data-modal="amphore">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 id="modal-amphore-title">Nouvelle amphore</h2>
+        <button class="modal-close" data-close="amphore">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-amphore" class="form-column">
+          <label>Nom
+            <input type="text" id="amphore-name" required />
+          </label>
+          <label>Description
+            <input type="text" id="amphore-description" />
+          </label>
+          <label>Prompt système
+            <textarea id="amphore-prompt" rows="6" required></textarea>
+          </label>
+          <div id="amphore-error" class="login-error hidden"></div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-close="amphore">Annuler</button>
+            <button type="submit" class="btn btn-primary">Enregistrer</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-config" class="modal hidden" data-modal="config">
+    <div class="modal-box modal-box-large">
+      <div class="modal-header">
+        <h2>Config système</h2>
+        <button class="modal-close" data-close="config">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="config-panel" class="config-panel config-scroll"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn" data-close="config">Annuler</button>
+        <button type="button" id="btn-config-save" class="btn btn-primary">Sauvegarder</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-admin" class="modal hidden" data-modal="admin">
+    <div class="modal-box modal-box-large">
+      <div class="modal-header">
+        <h2>Administration</h2>
+        <button class="modal-close" data-close="admin">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="admin-tabs">
+          <button class="admin-tab active" data-admin-tab="users">Comptes</button>
+          <button class="admin-tab" data-admin-tab="amphores">Amphores globales</button>
+        </div>
+
+        <div id="admin-panel-users" class="admin-panel">
+          <form id="form-user-create" class="admin-form">
+            <input type="text" id="user-create-name" placeholder="Nom d'utilisateur" required />
+            <input type="text" id="user-create-password" placeholder="Mot de passe" minlength="6" required />
+            <button type="submit" class="btn btn-primary">Créer</button>
+          </form>
+          <div id="admin-list-users" class="admin-list"></div>
+        </div>
+
+        <div id="admin-panel-amphores" class="admin-panel hidden">
+          <p class="modal-info">Gérez les amphores globales (créer / modifier / supprimer).</p>
+          <div class="admin-form">
+            <button type="button" id="btn-amphore-global-create" class="btn btn-primary">＋ Nouvelle amphore globale</button>
+          </div>
+          <div id="admin-list-amphores" class="admin-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/assets/hermes.js"></script>
+</body>
+</html>

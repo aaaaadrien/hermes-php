@@ -1,0 +1,95 @@
+<?php
+/**
+ * Configuration Hermes — exemple
+ * ===============================
+ * Copiez ce fichier vers data/config.php et ajustez les valeurs.
+ */
+
+return array (
+  'llm' => 
+  array (
+    'base_url' => 'http://localhost:8080/v1',
+    'api_key' => 'sk-no-key-required',
+    'model' => 'default',
+    'max_tokens' => '65536',
+    'temperature' => '0.7',
+    'raisonnement' => '',
+  ),
+  'whisper' => 
+  array (
+    'base_url' => 'http://localhost:8081',
+    'endpoint' => '/inference',
+    'response_format' => 'json',
+    'language' => 'fr',
+    'audio_format' => 'wav',
+    'dictation' => 'true',
+  ),
+  'video_url' => 
+  array (
+    'domaines_autorises' => 'youtube.com, twitch.tv, arte.tv',
+  ),
+  'image' => 
+  array (
+    'base_url' => 'http://localhost:8082',
+    'endpoint' => '/v1/images/generations',
+    'size' => '512x512',
+    'steps' => '',
+  ),
+  'audio' => 
+  array (
+    'base_url' => 'http://localhost:8083',
+    'endpoint' => '/v1/audio/speech',
+    'model' => 'qwen3-tts',
+    'voice' => 'Sohee',
+    'language' => 'fr',
+    'tts' => 'true',
+  ),
+  'agent' => 
+  array (
+    'system_prompt' => 'Répond en français sauf avis contraire',
+  ),
+  'tools' => 
+  array (
+    'enable_meteo' => 'true',
+    'enable_wiki' => 'false',
+    'enable_argent' => 'true',
+    'enable_duckduckgo' => 'true',
+    'enable_recup_page' => 'true',
+    'enable_datetime' => 'true',
+    'enable_generer_fichier' => 'true',
+    'enable_youtube_transcript' => 'true',
+    'enable_transcrire_audio' => 'true',
+    'enable_generation_image' => 'true',
+  ),
+  'amphores' => 
+  array (
+    'mode' => 'disabled',
+  ),
+  'auth' => 
+  array (
+    'authentification' => 'none',
+    'register' => 'off',
+  ),
+  'oidc' => 
+  array (
+    'enabled' => 'false',
+    'issuer' => 'https://sso.example.org/realms/mon-realm',
+    'client_id' => 'hermes',
+    'client_secret' => 'CHANGE_MOI',
+    'redirect_uri' => 'http://localhost:8501/',
+    'scope' => 'openid profile email',
+  ),
+  'web' => 
+  array (
+    'page_title' => 'Hermes chatbot by Linuxtricks.fr',
+    'page_icon' => '📜',
+    'header' => 'Hermes chatbot by Linuxtricks.fr',
+    'limite_contexte_fichier' => '65536',
+  ),
+  'cli' => 
+  array (
+    'banner' => '=== HERMES PRÊT — Tapez \'exit\' pour quitter ===',
+    'user_prefix' => 'Vous',
+    'agent_prefix' => 'Hermes',
+  ),
+);

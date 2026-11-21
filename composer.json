@@ -1,0 +1,16 @@
+{
+    "name": "hermes/chat",
+    "description": "Hermes Chatbot",
+    "authors": [
+        {
+            "name": "Linuxtricks"
+        }
+    ],
+    "minimum-stability": "stable",
+    "require": {
+        "mpdf/mpdf": "^8.0",
+        "phpoffice/phpword": "^1.3",
+        "phpoffice/phpspreadsheet": "^3.0",
+        "phpoffice/phppresentation": "^1.2"
+    }
+}
