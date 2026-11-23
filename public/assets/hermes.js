@@ -876,6 +876,29 @@ function nouveauOutilEl(asst, label, nom) {
 
 async function envoyer() {
   if (enCours) { arreterRequete(); return; }
+  if (envoiEnAttente) return;
+  // Envoi pendant dictée : on stoppe la dictée, on attend la
+  // transcription, puis on envoie texte saisi + transcription.
+  const btnDictee = $('btn-dictation');
+  if (btnDictee.classList.contains('recording') || btnDictee.classList.contains('transcribing')) {
+    envoiEnAttente = true;
+    let dicteeTexte = null;
+    try {
+      dicteeTexte = await arreterDicteeEnAttente();
+    } catch (e) {
+      dicteeTexte = ''; // erreur : toast déjà affiché par transcrireDictee
+    } finally {
+      envoiEnAttente = false;
+    }
+    if (dicteeTexte === '' && $('composer-input').value.trim() !== '') {
+      // La transcription n'a rien produit (erreur ou aucun texte détecté) :
+      // pas d'envoi, le texte saisi reste dans la zone (dictée stoppée).
+      $('composer-input').focus();
+      return;
+    }
+    // dicteeTexte === null (trop court) ou texte non vide (déjà inséré
+    // dans la zone par onstop) : on envoie la zone telle quelle.
+  }
   const texte = $('composer-input').value.trim();
   if (!texte) return;
   enCours = true;
@@ -1122,6 +1145,9 @@ let mediaStream = null;     // flux micro courant
 let dicteeChunks = [];      // chunks audio accumulés pendant l'enregistrement
 let dicteeDebut = 0;        // timestamp (ms) du début de l'enregistrement
 let dicteeTimerId = null;   // intervalle du compteur affiché
+let dicteePromesse = null;  // transcription en cours (résout avec le texte,
+                            // null = aucune transcription : pas d'audio / trop court)
+let envoiEnAttente = false; // anti double-envoi pendant l'attente de la transcription
 const DICTEE_MAX_MS = 5 * 60 * 1000; // 5 minutes maximum, arrêt automatique
 
 /** MIME préféré pour MediaRecorder (feature detection par candidat). */
@@ -1185,14 +1211,24 @@ async function basculerDictee() {
     mediaRecorder.onstop = () => {
       libererStreamMicro();
       etatDictee('idle');
-      if (dicteeChunks.length === 0) return;
+      if (dicteeChunks.length === 0) {
+        dicteePromesse = Promise.resolve(null);
+        return;
+      }
       const blob = new Blob(dicteeChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
       dicteeChunks = [];
       if (blob.size < 1000) {
         toast('Enregistrement trop court.');
+        dicteePromesse = Promise.resolve(null);
         return;
       }
-      transcrireDictee(blob);
+      dicteePromesse = transcrireDictee(blob);
+      // Chemin normal (arrêt au bouton micro) : on insère la transcription
+      // dans la zone de saisie. « Envoyer pendant dictée » (envoyer())
+      // consomme la même promesse et lit la zone après coup.
+      dicteePromesse
+        .then((t) => { if (t) ajouterTexteDictee(t); })
+        .catch(() => { /* le toast d'erreur est affiché par transcrireDictee */ });
     };
     mediaRecorder.start(250);
     dicteeDebut = Date.now();
@@ -1216,6 +1252,44 @@ function arreterDictee() {
   }
 }
 
+/**
+ * Stoppe la dictée (si elle enregistre) et renvoie une promesse résolue
+ * avec le résultat de la transcription :
+ *   - chaîne (éventuellement vide) : transcription faite (vide = rien détecté)
+ *   - null : aucune transcription (pas d'audio ou enregistrement trop court)
+ *   - rejet : erreur de transcription
+ * Si une transcription est déjà en cours, attend simplement sa fin.
+ */
+function arreterDicteeEnAttente() {
+  const btn = $('btn-dictation');
+  if (btn.classList.contains('transcribing')) {
+    return dicteePromesse || Promise.resolve(null);
+  }
+  if (btn.classList.contains('recording') && mediaRecorder) {
+    return new Promise((resolve) => {
+      const ancien = mediaRecorder.onstop;
+      // onstop (handler synchrone) met à jour dicteePromesse avant le resolve.
+      mediaRecorder.onstop = () => {
+        ancien();
+        resolve(dicteePromesse);
+      };
+      if (mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+      }
+      // Si l'état est déjà « inactive » (stop en cours), onstop se
+      // déclenchera de lui-même et la promesse sera résolue.
+    });
+  }
+  return Promise.resolve(null);
+}
+
+/**
+ * Envoie un enregistrement à /api/dictation.
+ * Renvoie une promesse résolue avec le texte transcrit (chaîne vide si
+ * rien n'a été détecté) ; elle rejette en cas d'erreur (le toast est
+ * affiché ici). L'insertion dans la zone de saisie est faite par
+ * l'appelant (onstop).
+ */
 function transcrireDictee(blob) {
   etatDictee('transcribing');
   const mime = blob.type || '';
@@ -1223,16 +1297,18 @@ function transcrireDictee(blob) {
     : mime.includes('ogg') ? 'ogg' : 'webm';
   const fd = new FormData();
   fd.append('fichier', blob, 'diction.' + ext);
-  api('/api/dictation', { method: 'POST', body: fd })
+  return api('/api/dictation', { method: 'POST', body: fd })
     .then((res) => {
       const texte = String(res.texte || '').trim();
-      if (texte) {
-        ajouterTexteDictee(texte);
-      } else {
+      if (!texte) {
         toast('Aucun texte détecté dans l\'enregistrement.');
       }
+      return texte;
     })
-    .catch((e) => toast('Dictée : ' + e.message))
+    .catch((e) => {
+      toast('Dictée : ' + e.message);
+      throw e;
+    })
     .finally(() => etatDictee('idle'));
 }
 
