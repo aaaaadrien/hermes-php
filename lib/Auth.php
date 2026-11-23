@@ -127,14 +127,31 @@ class Auth
         if ($row['auth_provider'] === 'oidc') {
             return [false, 'Ce compte est géré via SSO (OIDC) : le mot de passe ne peut pas être changé ici.'];
         }
-        [$hCurrent] = self::hashPassword($currentPassword, $row['salt']);
-        $verified = hash_equals($row['password_hash'], $hCurrent);
+        // Verify first: a well-formed stored hash is 32 raw bytes
+        // (PBKDF2-SHA256, binary) and the salt is 32 hex characters (16 bytes).
+        $storedHash = (string) $row['password_hash'];
+        $salt = (string) $row['salt'];
+        $wellFormed = strlen($storedHash) === 32
+            && preg_match('/^[0-9a-f]{32}$/', $salt) === 1;
+        $verified = false;
+        if ($wellFormed) {
+            [$hCurrent] = self::hashPassword($currentPassword, $salt);
+            $verified = hash_equals($storedHash, $hCurrent);
+        }
+        if (!$verified && $wellFormed) {
+            // Well-formed credentials that do not match: the current password
+            // is wrong — the update is refused.
+            return [false, 'Mot de passe actuel incorrect.'];
+        }
         [$hNew, $saltNew] = self::hashPassword($newPassword);
         $upd = $con->prepare("UPDATE users SET password_hash = ?, salt = ? WHERE id = ?");
         $upd->execute([$hNew, $saltNew, $userId]);
         if ($verified) {
             return [true, 'Mot de passe modifié avec succès.'];
         }
+        // Unverifiable credentials (corrupted hash or salt): the account would
+        // be locked out for good, so the change is allowed as a recovery
+        // (the caller already holds a valid session for this account).
         return [true, 'Mot de passe modifié avec succès. (L\'ancien hash était corrompu.)'];
     }
 
