@@ -86,10 +86,8 @@ return array (
     'header' => 'Hermes chatbot by Linuxtricks.fr',
     'limite_contexte_fichier' => '65536',
   ),
-  'cli' => 
+  'rate_limit' => 
   array (
-    'banner' => '=== HERMES PRÊT — Tapez \'exit\' pour quitter ===',
-    'user_prefix' => 'Vous',
-    'agent_prefix' => 'Hermes',
+    'enable' => 'true',
   ),
 );

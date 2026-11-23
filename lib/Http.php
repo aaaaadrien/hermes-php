@@ -18,7 +18,9 @@ class Http
      * @param array<string,mixed>|null $json JSON body (POST/PUT)
      * @param callable():bool|null $checkStop if non-null and returns true,
      *        the transfer is aborted (RequestAbortedException)
-     * @return array{0:int, 1:mixed, 2:string}
+     * @param bool $followRedirects if false, 3xx responses are returned as-is
+     *        (the caller follows the redirect, re-validating the URL first)
+     * @return array{0:int, 1:mixed, 2:string, 3:array<int,string>}
      */
     public static function request(
         string $method,
@@ -28,19 +30,25 @@ class Http
         array $headers = [],
         ?string $rawBody = null,
         ?callable $checkStop = null,
+        bool $followRedirects = true,
     ): array {
         $ch = curl_init($url);
         $httpHeaders = ['Accept: application/json'];
         foreach ($headers as $k => $v) {
             $httpHeaders[] = "$k: $v";
         }
+        $responseHeaders = [];
         $options = [
             CURLOPT_CUSTOMREQUEST => strtoupper($method),
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT => $timeout,
             CURLOPT_CONNECTTIMEOUT => 10,
             CURLOPT_HTTPHEADER => $httpHeaders,
-            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_FOLLOWLOCATION => $followRedirects,
+            CURLOPT_HEADERFUNCTION => function ($_ch, string $line) use (&$responseHeaders): int {
+                $responseHeaders[] = $line;
+                return strlen($line);
+            },
         ];
         if ($json !== null) {
             $httpHeaders[] = 'Content-Type: application/json';
@@ -78,7 +86,7 @@ class Http
         if (json_last_error() !== JSON_ERROR_NONE) {
             $decoded = null;
         }
-        return [$status, $decoded, $raw];
+        return [$status, $decoded, $raw, $responseHeaders];
     }
 
     /**

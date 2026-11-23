@@ -235,10 +235,28 @@ class Tools
     {
         $maxChars = min(max(1, $maxChars), 1024000);
         try {
-            [, , $raw] = Http::request('GET', $url, null, 10, [
-                'User-Agent' => self::USER_AGENT_BROWSER,
-                'Accept' => 'text/html,application/xhtml+xml',
-            ]);
+            // SSRF guard: the URL is LLM-controlled, so it is validated
+            // before every request (and after every redirect).
+            $current = $url;
+            $raw = '';
+            for ($hop = 0; ; $hop++) {
+                self::assertSafeFetchUrl($current);
+                [$status, , $raw, $headers] = Http::request('GET', $current, null, 10, [
+                    'User-Agent' => self::USER_AGENT_BROWSER,
+                    'Accept' => 'text/html,application/xhtml+xml',
+                ], null, null, false);
+                if (!in_array($status, [301, 302, 303, 307, 308], true)) {
+                    break;
+                }
+                if ($hop >= 3) {
+                    throw new \InvalidArgumentException('Trop de redirections (3 maximum).');
+                }
+                $location = self::headerValue($headers, 'Location');
+                if ($location === '') {
+                    throw new \InvalidArgumentException('Redirection sans en-tête Location.');
+                }
+                $current = self::resolveUrl($location, $current);
+            }
             $text = self::extractTextHtml($raw);
             $text = preg_replace('/[ \t]+/u', ' ', $text) ?? $text;
             $text = preg_replace('/\n{3,}/', "\n\n", $text) ?? $text;
@@ -251,6 +269,171 @@ class Tools
         } catch (\Throwable $e) {
             return "⚠️ Erreur lors du chargement de la page : {$e->getMessage()}";
         }
+    }
+
+    // ------------------------------------------------------------------
+    // SSRF guard (toolFetchPage)
+    // ------------------------------------------------------------------
+
+    /**
+     * Validates that a URL can safely be fetched from the server.
+     * Used by toolFetchPage only: its URL is LLM-controlled, while the
+     * other HTTP calls (LLM, Whisper, OIDC...) legitimately target
+     * private-network addresses.
+     *
+     * Rules: http/https only, port 80/443 only, and the host (IP literal
+     * or every DNS-resolved address) must not belong to a private,
+     * loopback, link-local or otherwise non-public range.
+     * Residual risk: DNS rebinding (cURL resolves again at connect time).
+     *
+     * @throws \InvalidArgumentException when the URL is not safe
+     */
+    private static function assertSafeFetchUrl(string $url): void
+    {
+        $parts = parse_url($url);
+        if ($parts === false || !isset($parts['scheme'], $parts['host'])) {
+            throw new \InvalidArgumentException('URL invalide : ' . $url);
+        }
+        $scheme = strtolower($parts['scheme']);
+        if (!in_array($scheme, ['http', 'https'], true)) {
+            throw new \InvalidArgumentException(
+                "Protocole non autorisé « {$parts['scheme']} » (http/https uniquement)."
+            );
+        }
+        $port = $parts['port'] ?? ($scheme === 'https' ? 443 : 80);
+        if ($port !== 80 && $port !== 443) {
+            throw new \InvalidArgumentException("Port non autorisé : $port (80/443 uniquement).");
+        }
+
+        $host = strtolower($parts['host']);
+        if (str_starts_with($host, '[') && str_ends_with($host, ']')) {
+            $host = substr($host, 1, -1); // IPv6 literal
+        }
+        if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
+            self::assertPublicIp($host);
+            return;
+        }
+
+        // Hostname: every resolved address must be public.
+        $ips = [];
+        $records = @dns_get_record($host, DNS_A | DNS_AAAA) ?: [];
+        foreach ($records as $record) {
+            if (isset($record['ip'])) {
+                $ips[] = $record['ip'];
+            }
+            if (isset($record['ipv6'])) {
+                $ips[] = $record['ipv6'];
+            }
+        }
+        if ($ips === []) {
+            $fallback = @gethostbynamel($host);
+            if (is_array($fallback)) {
+                foreach ($fallback as $ip) {
+                    if (filter_var($ip, FILTER_VALIDATE_IP) !== false) {
+                        $ips[] = $ip;
+                    }
+                }
+            }
+        }
+        if ($ips === []) {
+            throw new \InvalidArgumentException("Impossible de résoudre le nom d'hôte « $host ».");
+        }
+        foreach ($ips as $ip) {
+            self::assertPublicIp($ip);
+        }
+    }
+
+    /**
+     * Rejects non-public IP addresses: 0.0.0.0/8, 10/8, 127/8,
+     * 169.254/16 (cloud metadata), 172.16/12, 192.168/16, ::, ::1,
+     * fc00::/7 and fe80::/10 (including IPv4-mapped IPv6).
+     *
+     * @throws \InvalidArgumentException
+     */
+    private static function assertPublicIp(string $ip): void
+    {
+        $addr = @inet_pton($ip);
+        if ($addr === false) {
+            throw new \InvalidArgumentException("Adresse IP invalide : $ip");
+        }
+        // IPv4-mapped IPv6 (::ffff:a.b.c.d): check the IPv4 part.
+        if (strlen($addr) === 16
+            && substr($addr, 0, 10) === "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+            && substr($addr, 10, 2) === "\xff\xff") {
+            self::assertPublicIp(long2ip(substr($addr, 12)));
+            return;
+        }
+        if (strlen($addr) === 4) {
+            $n = ip2long($ip);
+            $blocked = [
+                [ip2long('0.0.0.0'),     0xFF000000], // 0.0.0.0/8
+                [ip2long('10.0.0.0'),    0xFF000000], // 10.0.0.0/8
+                [ip2long('127.0.0.0'),   0xFF000000], // 127.0.0.0/8
+                [ip2long('169.254.0.0'), 0xFFFF0000], // 169.254.0.0/16
+                [ip2long('172.16.0.0'),  0xFFF00000], // 172.16.0.0/12
+                [ip2long('192.168.0.0'), 0xFFFF0000], // 192.168.0.0/16
+            ];
+            foreach ($blocked as [$base, $mask]) {
+                if (($n & $mask) === $base) {
+                    throw new \InvalidArgumentException("Adresse IP non autorisée (réseau privé/interne) : $ip");
+                }
+            }
+            return;
+        }
+        // IPv6
+        if ($addr === "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+            || $addr === "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01") {
+            throw new \InvalidArgumentException("Adresse IP non autorisée (réseau privé/interne) : $ip");
+        }
+        $first = ord($addr[0]);
+        if (($first & 0xFE) === 0xFC) { // fc00::/7 (unique local)
+            throw new \InvalidArgumentException("Adresse IP non autorisée (réseau privé/interne) : $ip");
+        }
+        if (($first & 0xFF) === 0xFE && (ord($addr[1]) & 0xC0) === 0x80) { // fe80::/10 (link-local)
+            throw new \InvalidArgumentException("Adresse IP non autorisée (réseau privé/interne) : $ip");
+        }
+    }
+
+    /** Extracts a response header value (last occurrence) from raw header lines. */
+    private static function headerValue(array $headers, string $name): string
+    {
+        $value = '';
+        foreach ($headers as $line) {
+            if (str_contains($line, ':')) {
+                [$k, $v] = explode(':', $line, 2);
+                if (strcasecmp(trim($k), $name) === 0) {
+                    $value = trim($v);
+                }
+            }
+        }
+        return $value;
+    }
+
+    /** Resolves a (possibly relative) Location value against the base URL. */
+    private static function resolveUrl(string $location, string $base): string
+    {
+        $location = trim($location);
+        if ($location === '') {
+            throw new \InvalidArgumentException('En-tête Location vide.');
+        }
+        if (preg_match('#^https?://#i', $location)) {
+            return $location;
+        }
+        $b = parse_url($base);
+        if ($b === false || !isset($b['scheme'], $b['host'])) {
+            throw new \InvalidArgumentException('URL de base invalide.');
+        }
+        if (str_starts_with($location, '//')) {
+            return $b['scheme'] . ':' . $location;
+        }
+        $origin = $b['scheme'] . '://' . $b['host'] . (isset($b['port']) ? ':' . $b['port'] : '');
+        if (str_starts_with($location, '/')) {
+            return $origin . $location;
+        }
+        // Relative to the current directory.
+        $path = $b['path'] ?? '/';
+        $dir = substr($path, 0, (int) strrpos($path, '/') + 1);
+        return $origin . $dir . $location;
     }
 
     /**

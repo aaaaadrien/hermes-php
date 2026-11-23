@@ -20,6 +20,7 @@ use Hermes\Amphores;
 use Hermes\Conversations;
 use Hermes\Llm;
 use Hermes\RequestAbortedException;
+use Hermes\RateLimiter;
 use Hermes\Upload;
 use Hermes\UploadChunks;
 use Hermes\Tools;
@@ -60,6 +61,26 @@ function readJson(): array
     $raw = (string) file_get_contents('php://input');
     $dec = json_decode($raw, true);
     return is_array($dec) ? $dec : [];
+}
+
+/**
+ * Security headers applied to every response (HTML, JSON, SSE, files).
+ * The CSP allows inline styles only because the SPA injects style="…"
+ * attributes via innerHTML; no inline scripts are used.
+ */
+function securityHeaders(): void
+{
+    header(
+        'Content-Security-Policy: '
+        . "default-src 'self'; script-src 'self'; "
+        . "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+        . 'media-src \'self\' blob:; connect-src \'self\'; '
+        . "base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    );
+    header('X-Content-Type-Options: nosniff');
+    header('X-Frame-Options: DENY');
+    header('Referrer-Policy: strict-origin-when-cross-origin');
+    header('Permissions-Policy: camera=(), microphone=(self), geolocation=()');
 }
 
 /** Configured authentication mode (none / userpass). */
@@ -1236,6 +1257,25 @@ function routeApi(Config $conf, string $methode, string $path): never
     // without a session (otherwise the login page could not load).
     $user = Auth::currentUser();
 
+    // --- Rate limiting (brute force) on login/register, per IP. ---
+    // Note: REMOTE_ADDR is the reverse-proxy IP behind one (limits then
+    // apply to all users); fine for a direct Apache deployment.
+    if ($conf->getbool('rate_limit', 'enable', true)) {
+        $limits = [
+            'login'    => [10, 15 * 60], // 10 hits / 15 min
+            'register' => [5, 3600],     // 5 hits / hour
+        ];
+        if (isset($limits[$ressource]) && $methode === 'POST') {
+            [$max, $window] = $limits[$ressource];
+            $ip = (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown');
+            $result = RateLimiter::hit("{$ressource}:$ip", $max, $window);
+            if (!$result['allowed']) {
+                header('Retry-After: ' . $result['retryAfter']);
+                json_err('Trop de tentatives, veuillez réessayer plus tard.', 429);
+            }
+        }
+    }
+
     // --- Public routes (accessible without a session) ---
     if ($ressource === 'login' && $methode === 'POST') {
         routeLogin($conf, $in);
@@ -1578,6 +1618,7 @@ function serveSpa(string $path): never
 
 function main(): void
 {
+    securityHeaders();
     $conf = getHermesConfig();
     $path = (string) (parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/');
     $methode = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));

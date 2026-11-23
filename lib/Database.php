@@ -4,7 +4,8 @@
  * ===============================
  * SQLite (PDO), stored in data/hermes.db, created automatically on first
  * launch:
- *   users, conversations, messages, sessions, amphores_global, amphores_perso.
+ *   users, conversations, messages, sessions, amphores_global, amphores_perso,
+ *   rate_limits.
  */
 
 declare(strict_types=1);
@@ -118,6 +119,12 @@ CREATE TABLE IF NOT EXISTS amphores_perso (
     description   TEXT,
     system_prompt TEXT NOT NULL,
     created_at    INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rate_limits (
+    key          TEXT PRIMARY KEY,
+    window_start INTEGER NOT NULL,
+    hits         INTEGER NOT NULL
 );
 SQL;
 
