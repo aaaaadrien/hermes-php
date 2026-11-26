@@ -14,7 +14,6 @@ ini_set('log_errors', '1');
 
 define('HERMES_ROOT', dirname(__DIR__));
 define('HERMES_DATA_DIR', HERMES_ROOT . '/data');
-define('HERMES_UPLOAD_DIR', HERMES_DATA_DIR . '/uploads');
 
 // Composer autoloader (mpdf, phpoffice, ...)
 if (is_file(HERMES_ROOT . '/vendor/autoload.php')) {

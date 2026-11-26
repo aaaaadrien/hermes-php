@@ -85,7 +85,7 @@ return array (
     'page_icon' => '📜',
     'header' => 'Hermes chatbot by Linuxtricks.fr',
     'limite_contexte_fichier' => '65536',
-    // 'base_path' => '',
+    'base_path' => '',
   ),
   'rate_limit' => 
   array (
