@@ -297,7 +297,7 @@ function routeOidcStart(Config $conf): never
 }
 
 /** OIDC callback (outside /api): exchanges the code, creates the session, redirects. */
-function routeOidcCallback(Config $conf): never
+function routeOidcCallback(Config $conf, string $base): never
 {
     $code = isset($_GET['code']) ? (string) $_GET['code'] : null;
     $state = isset($_GET['state']) ? (string) $_GET['state'] : null;
@@ -308,9 +308,9 @@ function routeOidcCallback(Config $conf): never
         $user = Auth::resolveOrCreateOidcUser($sub, $pref);
         $token = Auth::createSession($user['id']);
         Auth::setCookie($token);
-        header('Location: /');
+        header('Location: ' . $base . '/');
     } catch (OidcException $e) {
-        header('Location: /?erreur=' . rawurlencode($e->getMessage()));
+        header('Location: ' . $base . '/?erreur=' . rawurlencode($e->getMessage()));
     }
     exit;
 }
@@ -1589,7 +1589,7 @@ function staticMime(string $path): string
 }
 
 /** Serves a file from public/ or the SPA (index.html) as a last resort. */
-function serveSpa(string $path): never
+function serveSpa(string $path, string $base = ''): never
 {
     $public = __DIR__ . '/public';
     $publicReel = realpath($public) ?: $public;
@@ -1607,8 +1607,18 @@ function serveSpa(string $path): never
         }
     }
     // SPA: all unknown routes fall back to index.html.
+    // The <base> tag makes the page's relative URLs (assets, api/…)
+    // resolve against the app root, whatever the hosting depth.
+    $html = (string) file_get_contents($publicReel . '/index.html');
+    $remplace = 0;
+    $html = str_replace(
+        '<head>',
+        "<head>\n  <base href=\"" . htmlspecialchars($base . '/', ENT_QUOTES) . '" />',
+        $html,
+        $remplace
+    );
     header('Content-Type: text/html; charset=utf-8');
-    readfile($publicReel . '/index.html');
+    echo $html;
     exit;
 }
 
@@ -1616,16 +1626,44 @@ function serveSpa(string $path): never
 // Entry point
 // ---------------------------------------------------------------------------
 
+/**
+ * Base path of the app within the domain: '' when hosted at the domain
+ * root, '/hermes-php' when hosted at https://example.com/hermes-php/.
+ * Priority: [web] base_path setting (explicit override, e.g. behind a
+ * proxy that strips the prefix), otherwise auto-detected from SCRIPT_NAME.
+ * Returned normalized: '' or '/…' (no trailing slash).
+ */
+function appBasePath(Config $conf): string
+{
+    $fromConf = trim($conf->get('web', 'base_path', ''));
+    if ($fromConf !== '' && preg_match('#^(/[^/]+)+/?$#', $fromConf)) {
+        $base = $fromConf;
+    } else {
+        $base = dirname((string) ($_SERVER['SCRIPT_NAME'] ?? '/index.php'));
+    }
+    $base = rtrim($base, '/');
+    if ($base !== '' && !str_starts_with($base, '/')) {
+        $base = '/' . $base;
+    }
+    return $base;
+}
+
 function main(): void
 {
     securityHeaders();
     $conf = getHermesConfig();
+    $base = appBasePath($conf);
     $path = (string) (parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/');
+    // Strip the base path (border-checked, so /hermes-php-evil is not
+    // mistaken for the base) so routing sees /api/…, /oidc/callback, …
+    if ($base !== '' && ($path === $base || str_starts_with($path, $base . '/'))) {
+        $path = substr($path, strlen($base)) ?: '/';
+    }
     $methode = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 
     // Callback OIDC (hors /api).
     if ($path === '/oidc/callback') {
-        routeOidcCallback($conf);
+        routeOidcCallback($conf, $base);
     }
 
     // API.
@@ -1634,7 +1672,7 @@ function main(): void
     }
 
     // SPA / static files.
-    serveSpa($path);
+    serveSpa($path, $base);
 }
 
 main();

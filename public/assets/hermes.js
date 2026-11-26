@@ -75,7 +75,7 @@ async function uploaderChunks(fichier, onProgress, signal) {
       fd.append('taille', String(fichier.size));
       fd.append('chunk', blobChunk, 'chunk');
 
-      await api('/api/upload/chunk', { method: 'POST', body: fd, signal });
+      await api('api/upload/chunk', { method: 'POST', body: fd, signal });
       chunksEnvoyes++;
 
       if (onProgress) {
@@ -88,7 +88,7 @@ async function uploaderChunks(fichier, onProgress, signal) {
     // stockés sur le serveur seraient orphelins. On les supprime (sans
     // signaler l'erreur : le nettoyage est du meilleur effort).
     if (chunksEnvoyes > 0) {
-      api('/api/upload/clean', { method: 'POST', body: { upload_id: uploadId } }).catch(() => {});
+      api('api/upload/clean', { method: 'POST', body: { upload_id: uploadId } }).catch(() => {});
     }
     throw e;
   }
@@ -120,7 +120,7 @@ function appliquerTheme(t) {
 async function changerTheme(t) {
   if (!USER) { appliquerTheme(t); return; }
   try {
-    await api('/api/profile', { method: 'PUT', body: { theme: t } });
+    await api('api/profile', { method: 'PUT', body: { theme: t } });
     appliquerTheme(t);
   } catch (e) { toast('Erreur lors de la sauvegarde du thème'); }
 }
@@ -133,7 +133,7 @@ function mdInline(s) {
   s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+|\/[^\s)]+)\)/g,
     (m, label, url) =>
       url.startsWith('/')
-        ? '<a href="' + url + '" download>' + label + '</a>'
+        ? '<a href="' + url.replace(/^\//, '') + '" download>' + label + '</a>'
         : '<a href="' + url + '" target="_blank" rel="noopener">' + label + '</a>');
   return s;
 }
@@ -213,7 +213,7 @@ async function init() {
   } catch (e) { /* ignore */ }
 
   try {
-    Object.assign(CONFIG, await api('/api/config'));
+    Object.assign(CONFIG, await api('api/config'));
   } catch (e) {
     document.body.innerHTML = '<div style="padding:40px;font-family:sans-serif">'
       + 'Impossible de charger la configuration : ' + esc(e.message) + '</div>';
@@ -223,7 +223,7 @@ async function init() {
 
   let authentifie = false;
   try {
-    const me = await api('/api/me');
+    const me = await api('api/me');
     USER = me.user;
     authentifie = me.authentifie;
   } catch (e) { /* non authentifié */ }
@@ -375,7 +375,7 @@ async function faireLogin(ev) {
   btn.disabled = true;
   $('login-error').classList.add('hidden');
   try {
-    const r = await api('/api/login', {
+    const r = await api('api/login', {
       method: 'POST',
       body: { username: $('login-username').value, password: $('login-password').value },
     });
@@ -383,7 +383,7 @@ async function faireLogin(ev) {
     if (r.user && r.user.theme) {
       appliquerTheme(r.user.theme);
       if (USER) {
-        await api('/api/profile', { method: 'PUT', body: { theme: r.user.theme } }).catch(() => {});
+        await api('api/profile', { method: 'PUT', body: { theme: r.user.theme } }).catch(() => {});
       }
     }
     montrerApp();
@@ -401,7 +401,7 @@ async function faireRegister(ev) {
   btn.disabled = true;
   $('login-error').classList.add('hidden');
   try {
-    await api('/api/register', {
+    await api('api/register', {
       method: 'POST',
       body: { username: $('reg-username').value, password: $('reg-password').value },
     });
@@ -416,10 +416,10 @@ async function faireRegister(ev) {
 }
 
 async function faireLogout() {
-  try { await api('/api/logout', { method: 'POST' }); } catch (e) { /* ignore */ }
+  try { await api('api/logout', { method: 'POST' }); } catch (e) { /* ignore */ }
   USER = null;
   conversationId = null;
-  location.href = '/';
+  location.href = './';
 }
 
 function basculerOngletLogin(onglet) {
@@ -433,7 +433,7 @@ function basculerOngletLogin(onglet) {
 async function chargerConversations() {
   if (!USER) return;
   try {
-    CONVERSATIONS = await api('/api/conversations');
+    CONVERSATIONS = await api('api/conversations');
   } catch (e) { CONVERSATIONS = []; }
   rendreConvListe();
 }
@@ -510,7 +510,7 @@ async function ouvrirConversation(id) {
   if (!USER) return;
   conversationId = id;
   try {
-    const conv = await api('/api/conversations/' + id);
+    const conv = await api('api/conversations/' + id);
     amphoreId = conv.amphore_id || '';
     viderChat();
     const sel = $('select-amphore');
@@ -528,7 +528,7 @@ async function ouvrirConversation(id) {
 async function supprimerConversation(id) {
   if (!confirm('Supprimer cette conversation ?')) return;
   try {
-    await api('/api/conversations/' + id, { method: 'DELETE' });
+    await api('api/conversations/' + id, { method: 'DELETE' });
   } catch (e) { toast(e.message); return; }
   if (conversationId === id) {
     conversationId = null;
@@ -541,7 +541,7 @@ async function renommerConversation(id, ancienTitre) {
   const nouveauTitre = prompt('Nouveau nom pour cette conversation :', ancienTitre);
   if (nouveauTitre === null || nouveauTitre.trim() === '') return;
   try {
-    await api('/api/conversations/' + id, { method: 'PUT', body: { titre: nouveauTitre.trim() } });
+    await api('api/conversations/' + id, { method: 'PUT', body: { titre: nouveauTitre.trim() } });
     chargerConversations();
   } catch (e) { toast(e.message); }
 }
@@ -554,7 +554,7 @@ function viderChat() {
 // ============================ Amphores ============================
 async function chargerAmphores() {
   try {
-    AMPHORES = await api('/api/amphores');
+    AMPHORES = await api('api/amphores');
   } catch (e) { AMPHORES = []; }
   rendreSelectAmphore();
 }
@@ -609,10 +609,10 @@ async function creerAmphore(ev) {
   };
   try {
     if (modalAmphoreId) {
-      await api('/api/amphores/' + modalAmphoreId, { method: 'PUT', body: corps });
+      await api('api/amphores/' + modalAmphoreId, { method: 'PUT', body: corps });
     } else {
       corps.global = modalAmphoreGlobal;
-      await api('/api/amphores', { method: 'POST', body: corps });
+      await api('api/amphores', { method: 'POST', body: corps });
     }
     fermerModale('amphore');
     chargerAmphores();
@@ -630,7 +630,7 @@ async function supprimerAmphore() {
   if (!amphoreId) return;
   if (!confirm('Supprimer cette amphore ?')) return;
   try {
-    await api('/api/amphores/' + amphoreId, { method: 'DELETE' });
+    await api('api/amphores/' + amphoreId, { method: 'DELETE' });
     amphoreId = '';
     chargerAmphores();
     toast('Amphore supprimée.');
@@ -733,7 +733,7 @@ function ajouterTts(msg, texte, audioB64 = null, meta = null) {
     btnGen.textContent = '⏳';
     const body = { texte };
     if (messageId) body.message_id = messageId;
-    fetch('/api/tts', {
+    fetch('api/tts', {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -825,7 +825,7 @@ function rendreLiensTelechargement(texte, pjZone) {
     const urlFichier = match[2];
     const a = document.createElement('a');
     a.className = 'attachment-chip';
-    a.href = urlFichier;
+    a.href = urlFichier.replace(/^\//, ''); // '/api/fichiers/…' → 'api/fichiers/…' (résolu par <base>)
     a.download = nomFichier;
     a.textContent = '⬇ ' + nomFichier;
     pjZone.appendChild(a);
@@ -953,7 +953,7 @@ function arreterRequete() {
     // Le serveur (un autre worker) voit le fichier data/stop/<id>.lock et
     // tue le transfer vers le LLM. En parallèle, on coupe le flux SSE local
     // pour figer le rendu immédiatement.
-    api('/api/stop', { method: 'POST', body: { demande_id: idDemandeCourante } }).catch(() => {});
+    api('api/stop', { method: 'POST', body: { demande_id: idDemandeCourante } }).catch(() => {});
   }
   if (controleurArret) controleurArret.abort();
 }
@@ -1016,7 +1016,7 @@ async function streamChat(convId, message, reasoning, amphore, fichier, signal, 
     });
   }
 
-  const res = await fetch('/api/chat', { method: 'POST', headers, body, signal });
+  const res = await fetch('api/chat', { method: 'POST', headers, body, signal });
   if (!res.ok || !(res.headers.get('content-type') || '').includes('text/event-stream')) {
     let msg = 'Erreur HTTP ' + res.status;
     try { const j = await res.json(); if (j.erreur) msg = j.erreur; } catch (e) { /* ignore */ }
@@ -1128,7 +1128,7 @@ function onSse(evenement, p) {
 
 function jouerTts(texte) {
   toast('Synthèse vocale en cours…', 2000);
-  fetch('/api/tts', {
+  fetch('api/tts', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
@@ -1297,7 +1297,7 @@ function transcrireDictee(blob) {
     : mime.includes('ogg') ? 'ogg' : 'webm';
   const fd = new FormData();
   fd.append('fichier', blob, 'diction.' + ext);
-  return api('/api/dictation', { method: 'POST', body: fd })
+  return api('api/dictation', { method: 'POST', body: fd })
     .then((res) => {
       const texte = String(res.texte || '').trim();
       if (!texte) {
@@ -1377,7 +1377,7 @@ async function changerMotDePasse(ev) {
   ev.preventDefault();
   $('profile-error').classList.add('hidden');
   try {
-    const res = await api('/api/password', {
+    const res = await api('api/password', {
       method: 'POST',
       body: { actuel: $('password-current').value, nouveau: $('password-new').value },
     });
@@ -1398,7 +1398,7 @@ async function ouvrirAdmin() {
 
 async function chargerUsers() {
   let users;
-  try { users = await api('/api/users'); } catch (e) { toast(e.message); return; }
+  try { users = await api('api/users'); } catch (e) { toast(e.message); return; }
   const liste = $('admin-list-users');
   liste.innerHTML = '';
   for (const u of users) {
@@ -1414,7 +1414,7 @@ async function chargerUsers() {
     selAdmin.innerHTML = '<option value="0">user</option><option value="1">admin</option>';
     selAdmin.value = u.is_admin ? '1' : '0';
     selAdmin.addEventListener('change', async () => {
-      try { await api('/api/users/' + u.id, { method: 'PUT', body: { is_admin: selAdmin.value === '1' } }); chargerUsers(); }
+      try { await api('api/users/' + u.id, { method: 'PUT', body: { is_admin: selAdmin.value === '1' } }); chargerUsers(); }
       catch (e) { toast(e.message); }
     });
     const selActif = document.createElement('select');
@@ -1422,7 +1422,7 @@ async function chargerUsers() {
     selActif.innerHTML = '<option value="1">actif</option><option value="0">désactivé</option>';
     selActif.value = u.is_active ? '1' : '0';
     selActif.addEventListener('change', async () => {
-      try { await api('/api/users/' + u.id, { method: 'PUT', body: { is_active: selActif.value === '1' } }); chargerUsers(); }
+      try { await api('api/users/' + u.id, { method: 'PUT', body: { is_active: selActif.value === '1' } }); chargerUsers(); }
       catch (e) { toast(e.message); }
     });
     const btnMdp = document.createElement('button');
@@ -1431,7 +1431,7 @@ async function chargerUsers() {
     btnMdp.addEventListener('click', async () => {
       const mdp = prompt('Nouveau mot de passe pour ' + u.username + ' :');
       if (!mdp) return;
-      try { await api('/api/users/' + u.id, { method: 'PUT', body: { password: mdp } }); toast('Mot de passe réinitialisé.'); }
+      try { await api('api/users/' + u.id, { method: 'PUT', body: { password: mdp } }); toast('Mot de passe réinitialisé.'); }
       catch (e) { toast(e.message); }
     });
     ligne.appendChild(selAdmin);
@@ -1444,7 +1444,7 @@ async function chargerUsers() {
 async function creerUser(ev) {
   ev.preventDefault();
   try {
-    await api('/api/users', {
+    await api('api/users', {
       method: 'POST',
       body: { username: $('user-create-name').value, password: $('user-create-password').value },
     });
@@ -1455,7 +1455,7 @@ async function creerUser(ev) {
 
 async function chargerAmphoresAdmin() {
   let amp;
-  try { amp = await api('/api/amphores'); } catch (e) { return; }
+  try { amp = await api('api/amphores'); } catch (e) { return; }
   const liste = $('admin-list-amphores');
   liste.innerHTML = '';
   // L'admin gère les amphores GLOBALES (les perso restent chez chaque user).
@@ -1477,7 +1477,7 @@ async function chargerAmphoresAdmin() {
     btnSuppr.textContent = '🗑';
     btnSuppr.addEventListener('click', async () => {
       if (!confirm('Supprimer l\'amphore globale « ' + a.nom + ' » ?')) return;
-      try { await api('/api/amphores/' + a.id, { method: 'DELETE' }); chargerAmphoresAdmin(); chargerAmphores(); }
+      try { await api('api/amphores/' + a.id, { method: 'DELETE' }); chargerAmphoresAdmin(); chargerAmphores(); }
       catch (e) { toast(e.message); }
     });
     ligne.appendChild(btnEditer);
@@ -1493,7 +1493,7 @@ function lierEvenements() {
   $('form-register').addEventListener('submit', faireRegister);
   document.querySelectorAll('.login-tab').forEach((o) =>
     o.addEventListener('click', () => basculerOngletLogin(o.dataset.tab)));
-  $('btn-login-oidc').addEventListener('click', () => { location.href = '/api/oidc/start'; });
+  $('btn-login-oidc').addEventListener('click', () => { location.href = 'api/oidc/start'; });
 
   // Sidebar
   $('btn-new-conv').addEventListener('click', nouvelleConversation);
@@ -1527,7 +1527,7 @@ function lierEvenements() {
     amphoreId = e.target.value;
     majBoutonSupprAmphore();
     if (USER && conversationId) {
-      api('/api/conversations/' + conversationId, { method: 'PUT', body: { amphore_id: amphoreId } }).catch(() => {});
+      api('api/conversations/' + conversationId, { method: 'PUT', body: { amphore_id: amphoreId } }).catch(() => {});
     }
   });
   $('form-amphore').addEventListener('submit', creerAmphore);
@@ -1618,7 +1618,7 @@ function ouvrirModaleConfig() {
 
 async function chargerConfig() {
   try {
-    configData = await api('/api/admin/config');
+    configData = await api('api/admin/config');
     rendreConfigUnifiee();
   } catch (e) {
     $('config-panel').innerHTML = '<span style="color:var(--erreur)">Erreur chargement config.</span>';
@@ -1754,7 +1754,7 @@ $('btn-config-save').addEventListener('click', async () => {
         }
       }
     }
-    await api('/api/admin/config', { method: 'POST', body: { config: nouvelleConfig } });
+    await api('api/admin/config', { method: 'POST', body: { config: nouvelleConfig } });
     toast('Config sauvegardée.');
     fermerModale('config');
   } catch (e) {

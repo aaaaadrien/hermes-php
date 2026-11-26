@@ -85,6 +85,10 @@ return array (
     'page_icon' => '📜',
     'header' => 'Hermes chatbot by Linuxtricks.fr',
     'limite_contexte_fichier' => '65536',
+    // Racine de l'app dans le domaine : vide = auto-détection
+    // ('' si racine du domaine, '/hermes-php' si sous-dossier).
+    // À n'utiliser que derrière un proxy qui strippe le préfixe.
+    // 'base_path' => '',
   ),
   'rate_limit' => 
   array (
