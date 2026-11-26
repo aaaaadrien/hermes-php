@@ -402,6 +402,22 @@ _Notes :_
 - Ajustez les chemins `SSLCertificate*` à votre installation — avec Let's Encrypt / `certbot --apache`, ils sont gérés automatiquement (`/etc/letsencrypt/live/hermes.linuxtricks.fr/fullchain.pem` et `privkey.pem`).
 - Une fois derrière HTTPS, mettez à jour la section `oidc` en conséquence : `'redirect_uri' => 'https://hermes.linuxtricks.fr/'`.
 
+#### SELinux (RHEL / Fedora / CentOS)
+
+Avec SELinux en mode `enforcing` (le défaut), Apache se voit refuser les écritures dans `data/` (base SQLite, sessions, uploads, verrous de stop) même quand les permissions POSIX sont correctes. Étiquetez le dossier comme contenu writable par httpd :
+
+```bash
+# Règle persistante (s'applique aussi aux nouveaux fichiers) — `semanage`
+# est fourni par le paquet `policycoreutils` (`sudo dnf install policycoreutils`).
+sudo semanage fcontext -a -t httpd_sys_rw_content_t '/chemin/vers/hermes-php/data(/.*)?'
+sudo restorecon -R '/chemin/vers/hermes-php/data'
+
+# Alternative rapide (sans règle persistante) :
+sudo chcon -R -t httpd_sys_rw_content_t /chemin/vers/hermes-php/data
+```
+
+Vérifiez avec `ls -Z data/` (le contexte doit être `httpd_sys_rw_content_t`). En cas de refus persistant : `sudo ausearch -m avc -ts recent`.
+
 ## Référentiel de configuration
 
 | Section | Clé | Défaut | Rôle |
