@@ -787,18 +787,39 @@ function detectToolChoiceFichier(string $prompt, array $nomsOutils): ?array
  * Reads the chat request (JSON or multipart if an attached file or chunked upload).
  * @return array{message:string, conversation_id:string, reasoning:string, amphore_id:string, ephemeral:bool, fichier:?array{contenu:string,nom:string,mime:string}, upload_id:string, demande_id:string}
  */
+/** Human-readable message for a PHP upload error code. */
+function messageErreurUpload(int $err): string
+{
+    return match ($err) {
+        UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE =>
+            'Fichier trop volumineux (limite serveur : ' . ini_get('upload_max_filesize') . '). Réduisez la taille du fichier.',
+        UPLOAD_ERR_PARTIAL =>
+            'Upload interrompu : le fichier a été transféré partiellement. Réessayez.',
+        default =>
+            'Erreur serveur lors de la réception du fichier (code ' . $err . '). Réessayez.',
+    };
+}
+
 function readChatRequest(): array
 {
     $ct = (string) ($_SERVER['CONTENT_TYPE'] ?? '');
     if (stripos($ct, 'multipart/form-data') !== false) {
         $fichier = null;
+        $fichierErreur = '';
         $uploadId = (string) ($_POST['upload_id'] ?? '');
-        if (!empty($_FILES['fichier']) && ($_FILES['fichier']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
-            $fichier = [
-                'contenu' => (string) file_get_contents($_FILES['fichier']['tmp_name']),
-                'nom' => (string) $_FILES['fichier']['name'],
-                'mime' => (string) $_FILES['fichier']['type'],
-            ];
+        if (!empty($_FILES['fichier'])) {
+            $errUpload = (int) ($_FILES['fichier']['error'] ?? UPLOAD_ERR_NO_FILE);
+            if ($errUpload === UPLOAD_ERR_OK) {
+                $fichier = [
+                    'contenu' => (string) file_get_contents($_FILES['fichier']['tmp_name']),
+                    'nom' => (string) $_FILES['fichier']['name'],
+                    'mime' => (string) $_FILES['fichier']['type'],
+                ];
+            } elseif ($errUpload !== UPLOAD_ERR_NO_FILE) {
+                // Rejected file (size, partial transfer, server error):
+                // report it instead of silently dropping the attachment.
+                $fichierErreur = messageErreurUpload($errUpload);
+            }
         }
         return [
             'message' => (string) ($_POST['message'] ?? ''),
@@ -807,6 +828,7 @@ function readChatRequest(): array
             'amphore_id' => (string) ($_POST['amphore_id'] ?? ''),
             'ephemeral' => !empty($_POST['ephemeral']),
             'fichier' => $fichier,
+            'fichier_erreur' => $fichierErreur,
             'upload_id' => $uploadId,
             'demande_id' => (string) ($_POST['demande_id'] ?? ''),
         ];
@@ -820,6 +842,7 @@ function readChatRequest(): array
         'ephemeral' => !empty($d['ephemeral']),
         'debut' => (string) ($d['debut'] ?? ''),
         'fichier' => null,
+        'fichier_erreur' => '',
         'upload_id' => (string) ($d['upload_id'] ?? ''),
         'demande_id' => (string) ($d['demande_id'] ?? ''),
     ];
@@ -836,6 +859,9 @@ function routeChat(Config $conf, ?array $user): void
     $message = trim($req['message']);
     if ($message === '') {
         json_err('Message vide.', 400);
+    }
+    if ($req['fichier_erreur'] !== '') {
+        json_err($req['fichier_erreur'], 400);
     }
 
     $ephemeral = !empty($req['ephemeral']);
@@ -1652,6 +1678,8 @@ function main(): void
 {
     securityHeaders();
     $conf = getHermesConfig();
+    // Effective limit for the text injected into the LLM context (config).
+    Upload::setContextLimit($conf->getint('web', 'limite_contexte_fichier', Upload::CONTEXT_LIMIT));
     $base = appBasePath($conf);
     $path = (string) (parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/');
     // Strip the base path (border-checked, so /hermes-php-evil is not

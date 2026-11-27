@@ -40,8 +40,26 @@ class Upload
         '.mp4', '.mkv', '.mov', '.avi',
     ];
 
-    /** Limit of characters injected into the context for text files. */
+    /** Default limit of characters injected into the context for text files. */
     public const CONTEXT_LIMIT = 65536;
+
+    /** Effective limit, set at startup from the config key
+     *  web.limite_contexte_fichier (falls back to CONTEXT_LIMIT). */
+    private static int $contextLimit = self::CONTEXT_LIMIT;
+
+    /** Sets the effective context limit (called once by the front controller). */
+    public static function setContextLimit(int $limit): void
+    {
+        if ($limit > 0) {
+            self::$contextLimit = $limit;
+        }
+    }
+
+    /** Current effective context limit. */
+    public static function contextLimit(): int
+    {
+        return self::$contextLimit;
+    }
 
     /**
      * Analyzes the uploaded content and returns:
@@ -52,8 +70,37 @@ class Upload
      *     "b64":     str|null,   # base64 for images
      *     "mime":    str|null,   # MIME type for images/audio
      *     "donnees": str|null,   # raw binary content (audio/video only)
+     *     "tronque":    bool,    # text truncated to the context limit
+     *     "taille_texte": int,   # extracted text length before truncation
      *   }
      */
+
+    /**
+     * Truncates the extracted text to the effective context limit.
+     *
+     * @return array{0: string, 1: bool, 2: int} truncated text, whether
+     *         truncation occurred, original length in characters
+     */
+    private static function applyContextLimit(string $text): array
+    {
+        $total = mb_strlen($text, 'UTF-8');
+        if ($total <= self::$contextLimit) {
+            return [$text, false, $total];
+        }
+        return [mb_substr($text, 0, self::$contextLimit, 'UTF-8'), true, $total];
+    }
+
+    /** Builds the standard "texte" result from an extracted text. */
+    private static function buildTextResult(string $name, string $text): array
+    {
+        [$contenu, $tronque, $total] = self::applyContextLimit($text);
+        return [
+            'type' => 'texte', 'nom' => $name, 'contenu' => $contenu,
+            'tronque' => $tronque, 'taille_texte' => $total,
+            'b64' => null, 'mime' => null, 'donnees' => null,
+        ];
+    }
+
     public static function extract(string $content, string $name, string $mime = ''): array
     {
         $ext = strtolower('.' . pathinfo($name, PATHINFO_EXTENSION));
@@ -62,6 +109,7 @@ class Upload
         if (in_array($mime, self::TYPES_IMAGE, true) || in_array($ext, ['.png', '.jpg', '.jpeg', '.gif', '.webp'], true)) {
             return [
                 'type' => 'image', 'nom' => $name, 'contenu' => null,
+                'tronque' => false, 'taille_texte' => 0,
                 'b64' => base64_encode($content), 'mime' => $mime ?: 'application/octet-stream',
                 'donnees' => null,
             ];
@@ -72,6 +120,7 @@ class Upload
             || str_starts_with($mime, 'audio/') || str_starts_with($mime, 'video/')) {
             return [
                 'type' => 'audio', 'nom' => $name, 'contenu' => null,
+                'tronque' => false, 'taille_texte' => 0,
                 'b64' => null, 'mime' => $mime ?: null, 'donnees' => $content,
             ];
         }
@@ -79,13 +128,13 @@ class Upload
         // PDF
         if ($ext === '.pdf') {
             $text = self::extractPdf($content);
-            return ['type' => 'texte', 'nom' => $name, 'contenu' => mb_substr($text, 0, self::CONTEXT_LIMIT, 'UTF-8'), 'b64' => null, 'mime' => null, 'donnees' => null];
+            return self::buildTextResult($name, $text);
         }
 
         // CSV
         if ($ext === '.csv') {
             $text = self::extractCsv($content);
-            return ['type' => 'texte', 'nom' => $name, 'contenu' => mb_substr($text, 0, self::CONTEXT_LIMIT, 'UTF-8'), 'b64' => null, 'mime' => null, 'donnees' => null];
+            return self::buildTextResult($name, $text);
         }
 
         // Excel
@@ -93,43 +142,43 @@ class Upload
             $text = $ext === '.xlsx'
                 ? self::extractXlsx($content)
                 : "⚠️ Le format .xls (binaire legacy) n'est pas supporté par le lecteur maison. Convertissez en .xlsx.";
-            return ['type' => 'texte', 'nom' => $name, 'contenu' => mb_substr($text, 0, self::CONTEXT_LIMIT, 'UTF-8'), 'b64' => null, 'mime' => null, 'donnees' => null];
+            return self::buildTextResult($name, $text);
         }
 
         // ODS
         if ($ext === '.ods') {
             $text = self::extractOds($content);
-            return ['type' => 'texte', 'nom' => $name, 'contenu' => mb_substr($text, 0, self::CONTEXT_LIMIT, 'UTF-8'), 'b64' => null, 'mime' => null, 'donnees' => null];
+            return self::buildTextResult($name, $text);
         }
 
         // ODT
         if ($ext === '.odt') {
             $text = self::extractOdt($content);
-            return ['type' => 'texte', 'nom' => $name, 'contenu' => mb_substr($text, 0, self::CONTEXT_LIMIT, 'UTF-8'), 'b64' => null, 'mime' => null, 'donnees' => null];
+            return self::buildTextResult($name, $text);
         }
 
         // ODP
         if ($ext === '.odp') {
             $text = self::extractOdp($content);
-            return ['type' => 'texte', 'nom' => $name, 'contenu' => mb_substr($text, 0, self::CONTEXT_LIMIT, 'UTF-8'), 'b64' => null, 'mime' => null, 'donnees' => null];
+            return self::buildTextResult($name, $text);
         }
 
         // PPTX
         if ($ext === '.pptx') {
             $text = self::extractPptx($content);
-            return ['type' => 'texte', 'nom' => $name, 'contenu' => mb_substr($text, 0, self::CONTEXT_LIMIT, 'UTF-8'), 'b64' => null, 'mime' => null, 'donnees' => null];
+            return self::buildTextResult($name, $text);
         }
 
         // PPT (binaire legacy) : message explicite
         if ($ext === '.ppt') {
             $text = "⚠️ Le format .ppt (binaire legacy) n'est pas supporté par le lecteur. Convertissez en .pptx.";
-            return ['type' => 'texte', 'nom' => $name, 'contenu' => $text, 'b64' => null, 'mime' => null, 'donnees' => null];
+            return self::buildTextResult($name, $text);
         }
 
         // DOCX
         if ($ext === '.docx') {
             $text = self::extractDocx($content);
-            return ['type' => 'texte', 'nom' => $name, 'contenu' => mb_substr($text, 0, self::CONTEXT_LIMIT, 'UTF-8'), 'b64' => null, 'mime' => null, 'donnees' => null];
+            return self::buildTextResult($name, $text);
         }
 
         // Plain text files (or fallback)
@@ -137,7 +186,7 @@ class Upload
         if ($text === false) {
             $text = '⚠️ Impossible de lire le fichier.';
         }
-        return ['type' => 'texte', 'nom' => $name, 'contenu' => mb_substr($text, 0, self::CONTEXT_LIMIT, 'UTF-8'), 'b64' => null, 'mime' => null, 'donnees' => null];
+        return self::buildTextResult($name, $text);
     }
 
     /**
@@ -148,7 +197,7 @@ class Upload
     public static function extractFromFile(string $path, string $name, string $mime = ''): array
     {
         if (!is_file($path)) {
-            return ['type' => 'texte', 'nom' => $name, 'contenu' => '⚠️ Fichier introuvable.', 'b64' => null, 'mime' => null, 'donnees' => null];
+            return self::buildTextResult($name, '⚠️ Fichier introuvable.');
         }
 
         $ext = strtolower('.' . pathinfo($name, PATHINFO_EXTENSION));
@@ -158,6 +207,7 @@ class Upload
             $content = (string) file_get_contents($path);
             return [
                 'type' => 'image', 'nom' => $name, 'contenu' => null,
+                'tronque' => false, 'taille_texte' => 0,
                 'b64' => base64_encode($content), 'mime' => $mime ?: 'application/octet-stream',
                 'donnees' => null,
             ];
@@ -168,6 +218,7 @@ class Upload
             || str_starts_with($mime, 'audio/') || str_starts_with($mime, 'video/')) {
             return [
                 'type' => 'audio', 'nom' => $name, 'contenu' => null,
+                'tronque' => false, 'taille_texte' => 0,
                 'b64' => null, 'mime' => $mime ?: null, 'donnees' => $path,
             ];
         }
@@ -175,20 +226,20 @@ class Upload
         // PDF: pdftotext reads the file directly
         if ($ext === '.pdf') {
             if (!self::binaryAvailable('pdftotext')) {
-                return ['type' => 'texte', 'nom' => $name, 'contenu' => "⚠️ pdftotext (poppler-utils) non installé. Impossible d'extraire le PDF.", 'b64' => null, 'mime' => null, 'donnees' => null];
+                return self::buildTextResult($name, "⚠️ pdftotext (poppler-utils) non installé. Impossible d'extraire le PDF.");
             }
             $cmd = 'pdftotext -enc UTF-8 ' . escapeshellarg($path) . ' - 2>/dev/null';
             $text = (string) shell_exec($cmd);
             if (trim($text) === '') {
                 $text = '⚠️ Aucun texte extrait de ce document (fichier scanné ?).';
             }
-            return ['type' => 'texte', 'nom' => $name, 'contenu' => mb_substr($text, 0, self::CONTEXT_LIMIT, 'UTF-8'), 'b64' => null, 'mime' => null, 'donnees' => null];
+            return self::buildTextResult($name, $text);
         }
 
         // CSV: stream read
         if ($ext === '.csv') {
             $text = self::extractCsvFromFile($path);
-            return ['type' => 'texte', 'nom' => $name, 'contenu' => mb_substr($text, 0, self::CONTEXT_LIMIT, 'UTF-8'), 'b64' => null, 'mime' => null, 'donnees' => null];
+            return self::buildTextResult($name, $text);
         }
 
         // Excel (ZIP): the file is already on disk, the path is passed
@@ -196,33 +247,33 @@ class Upload
             $text = $ext === '.xlsx'
                 ? self::extractXlsxFromFile($path)
                 : "⚠️ Le format .xls (binaire legacy) n'est pas supporté par le lecteur maison. Convertissez en .xlsx.";
-            return ['type' => 'texte', 'nom' => $name, 'contenu' => mb_substr($text, 0, self::CONTEXT_LIMIT, 'UTF-8'), 'b64' => null, 'mime' => null, 'donnees' => null];
+            return self::buildTextResult($name, $text);
         }
 
         // ODS/ODT/ODP: stream read
         if ($ext === '.ods') {
             $text = self::extractOdsFromFile($path);
-            return ['type' => 'texte', 'nom' => $name, 'contenu' => mb_substr($text, 0, self::CONTEXT_LIMIT, 'UTF-8'), 'b64' => null, 'mime' => null, 'donnees' => null];
+            return self::buildTextResult($name, $text);
         }
         if ($ext === '.odt') {
             $text = self::extractOdtFromFile($path);
-            return ['type' => 'texte', 'nom' => $name, 'contenu' => mb_substr($text, 0, self::CONTEXT_LIMIT, 'UTF-8'), 'b64' => null, 'mime' => null, 'donnees' => null];
+            return self::buildTextResult($name, $text);
         }
         if ($ext === '.odp') {
             $text = self::extractOdpFromFile($path);
-            return ['type' => 'texte', 'nom' => $name, 'contenu' => mb_substr($text, 0, self::CONTEXT_LIMIT, 'UTF-8'), 'b64' => null, 'mime' => null, 'donnees' => null];
+            return self::buildTextResult($name, $text);
         }
         if ($ext === '.pptx') {
             $text = self::extractPptxFromFile($path);
-            return ['type' => 'texte', 'nom' => $name, 'contenu' => mb_substr($text, 0, self::CONTEXT_LIMIT, 'UTF-8'), 'b64' => null, 'mime' => null, 'donnees' => null];
+            return self::buildTextResult($name, $text);
         }
         if ($ext === '.ppt') {
             $text = "⚠️ Le format .ppt (binaire legacy) n'est pas supporté par le lecteur. Convertissez en .pptx.";
-            return ['type' => 'texte', 'nom' => $name, 'contenu' => $text, 'b64' => null, 'mime' => null, 'donnees' => null];
+            return self::buildTextResult($name, $text);
         }
         if ($ext === '.docx') {
             $text = self::extractDocxFromFile($path);
-            return ['type' => 'texte', 'nom' => $name, 'contenu' => mb_substr($text, 0, self::CONTEXT_LIMIT, 'UTF-8'), 'b64' => null, 'mime' => null, 'donnees' => null];
+            return self::buildTextResult($name, $text);
         }
 
         // Plain text fallback: stream read
@@ -239,7 +290,7 @@ class Upload
             }
         }
         fclose($fp);
-        return ['type' => 'texte', 'nom' => $name, 'contenu' => mb_substr($text, 0, self::CONTEXT_LIMIT, 'UTF-8'), 'b64' => null, 'mime' => null, 'donnees' => null];
+        return self::buildTextResult($name, $text);
     }
 
     /**
@@ -272,8 +323,15 @@ class Upload
         }
         $injectedContent =
             "Voici le contenu du fichier `{$fileInfo['nom']}` :\n\n"
-            . "```\n" . ($fileInfo['contenu'] ?? '') . "\n```\n\n"
-            . "Question : $prompt";
+            . "```\n" . ($fileInfo['contenu'] ?? '') . "\n```\n\n";
+        if (!empty($fileInfo['tronque'])) {
+            $injectedContent .=
+                "⚠️ Ce document a été tronqué : seuls les " . self::contextLimit() . " premiers caractères "
+                . "sur " . (int) ($fileInfo['taille_texte'] ?? 0) . " sont présents ci-dessus. "
+                . "La suite du document n'est pas dans le contexte : ne déduis rien de son contenu "
+                . "et signale cette limitation à l'utilisateur.\n\n";
+        }
+        $injectedContent .= "Question : $prompt";
         return ['role' => 'user', 'content' => $injectedContent];
     }
 
