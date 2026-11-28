@@ -12,6 +12,26 @@ const CONFIG = {
   seuil_upload_chunk: 5 * 1024 * 1024,  // 5 Mo : seuil au-delà duquel on utilise le chunking
   taille_chunk: 1 * 1024 * 1024,         // 1 Mo par chunk
 };
+// Choix intégrés des enums connues (repli si le config n'a pas les
+// métadonnées `*_options` : prod, installation fraîche).
+// Seul llm.raisonnement admet la valeur vide ('' = désactivé).
+const ENUMS_CONFIG = {
+  'llm.raisonnement': ['', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'user'],
+  'whisper.audio_format': ['wav', 'ogg'],
+  'amphores.mode': ['all', 'user', 'disabled'],
+  'auth.authentification': ['none', 'userpass'],
+};
+// Champs numériques connus : le config stocke les nombres en chaînes,
+// donc cette liste pilote le rendu en <input type="number"> (step/min/max).
+// Champ vide à la sauvegarde → '' (défauts gérés côté PHP).
+const NUMERIC_CONFIG = {
+  'llm.max_tokens': { step: 1, min: 1 },
+  'llm.temperature': { step: 0.1, min: 0, max: 2 },
+  'image.steps': { step: 1, min: 1 },
+  'web.limite_contexte_fichier': { step: 1, min: 1 },
+  'web.seuil_upload_chunk': { step: 1, min: 1 },
+  'web.taille_chunk': { step: 1, min: 1 },
+};
 let USER = null;            // {id, username, is_admin, ...} ou null (mode none)
 let CONVERSATIONS = [];     // liste des conversations (mode userpass)
 let AMPHORES = [];          // liste des amphores accessibles
@@ -1678,15 +1698,19 @@ function rendreConfigUnifiee() {
       } else if (cle.endsWith('_options')) {
         // Skip options metadata
       } else {
-        const optionsKey = cle + '_options';
-        const options = data[optionsKey];
-        if (Array.isArray(options) && options.length > 0) {
+        // Listes déroulantes : métadonnées `*_options` du config si
+        // présentes, sinon valeurs intégrées des enums connues.
+        const options = (Array.isArray(data[cle + '_options']) && data[cle + '_options'].length > 0)
+          ? data[cle + '_options']
+          : ENUMS_CONFIG[sec + '.' + cle];
+        const specNombre = NUMERIC_CONFIG[sec + '.' + cle];
+        if (Array.isArray(options)) {
           const select = document.createElement('select');
           select.id = 'config-' + sec + '-' + cle;
           options.forEach(opt => {
             const optionEl = document.createElement('option');
             optionEl.value = opt;
-            optionEl.textContent = opt;
+            optionEl.textContent = opt === '' ? '— vide —' : opt;
             optionEl.selected = String(opt) === String(valeur);
             select.appendChild(optionEl);
           });
@@ -1705,9 +1729,15 @@ function rendreConfigUnifiee() {
             select.appendChild(opt);
           });
           groupe.appendChild(select);
-        } else if (typeof valeur === 'number') {
+        } else if (typeof valeur === 'number'
+          || (specNombre !== undefined && (valeur === '' || /^\d+(\.\d+)?$/.test(String(valeur))))) {
           const inp = document.createElement('input');
           inp.type = 'number';
+          if (specNombre) {
+            if (specNombre.step !== undefined) inp.step = String(specNombre.step);
+            if (specNombre.min !== undefined) inp.min = String(specNombre.min);
+            if (specNombre.max !== undefined) inp.max = String(specNombre.max);
+          }
           inp.value = valeur;
           inp.id = 'config-' + sec + '-' + cle;
           groupe.appendChild(inp);
@@ -1750,7 +1780,9 @@ $('btn-config-save').addEventListener('click', async () => {
           nouvelleConfig[section][cle] = checked ? checked.value === 'true' : false;
         } else {
           const val = el.value;
-          nouvelleConfig[section][cle] = el.type === 'number' ? (val === '' ? 0 : parseFloat(val)) : val;
+          // Champ nombre vide : on sauvegarde '' (défauts gérés côté PHP
+          // par getint/getfloat), pas 0.
+          nouvelleConfig[section][cle] = el.type === 'number' ? (val === '' ? '' : parseFloat(val)) : val;
         }
       }
     }

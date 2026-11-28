@@ -14,6 +14,19 @@ return array (
     'max_tokens' => '65536',
     'temperature' => '0.7',
     'raisonnement' => '',
+    // Métadonnées pour la liste déroulante de l'UI admin (non lues par le moteur).
+    // '' = désactivé ; 'user' = niveau choisi par l'utilisateur dans l'UI.
+    'raisonnement_options' => 
+    array (
+      0 => '',
+      1 => 'none',
+      2 => 'minimal',
+      3 => 'low',
+      4 => 'medium',
+      5 => 'high',
+      6 => 'xhigh',
+      7 => 'user',
+    ),
   ),
   'whisper' => 
   array (
@@ -22,6 +35,11 @@ return array (
     'response_format' => 'json',
     'language' => 'fr',
     'audio_format' => 'wav',
+    'audio_format_options' => 
+    array (
+      0 => 'wav',
+      1 => 'ogg',
+    ),
     'dictation' => 'true',
   ),
   'video_url' => 
@@ -64,11 +82,22 @@ return array (
   'amphores' => 
   array (
     'mode' => 'disabled',
+    'mode_options' => 
+    array (
+      0 => 'all',
+      1 => 'user',
+      2 => 'disabled',
+    ),
   ),
   'auth' => 
   array (
     'authentification' => 'userpass',
-    'register' => 'off',
+    'authentification_options' => 
+    array (
+      0 => 'none',
+      1 => 'userpass',
+    ),
+    'register' => 'false',
   ),
   'oidc' => 
   array (
@@ -84,7 +113,9 @@ return array (
     'page_title' => 'Hermes chatbot by Linuxtricks.fr',
     'page_icon' => '📜',
     'header' => 'Hermes chatbot by Linuxtricks.fr',
-    'limite_contexte_fichier' => '65536',
+    'limite_contexte_fichier' => '128000',
+    'seuil_upload_chunk' => '5242880',
+    'taille_chunk' => '1048576',
     'base_path' => '',
   ),
   'rate_limit' => 
